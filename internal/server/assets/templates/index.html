@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ .Title }}</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Sidebar: estado persistente da sessão e fluxo de diagnóstico em memória. -->
+    <aside class="sidebar">
+      <div>
+        <div class="brand-mark"> </div>
+        <div>
+          <h1>Defense Bridge Client</h1>
+          <p>Go + web UI para autenticação, sessão e envio de eventos customizados.</p>
+        </div>
+      </div>
+
+      <div class="status-panel">
+        <div class="panel-title">Status da sessão</div>
+        <div class="status-line">
+          <span id="statusBadge" class="badge offline">Desconectado</span>
+          <span id="statusBaseUrl" class="muted">-</span>
+        </div>
+        <div class="mini-grid">
+          <div><span class="mini-label">Bridge ID</span><strong id="statusBridgeId">-</strong></div>
+          <div><span class="mini-label">Token expira em</span><strong id="statusTokenExpiry">-</strong></div>
+          <div><span class="mini-label">Último authorize</span><strong id="statusAuthorize">-</strong></div>
+          <div><span class="mini-label">Último heartbeat</span><strong id="statusHeartbeat">-</strong></div>
+        </div>
+        <div id="lastErrorCard" class="error-card hidden"></div>
+      </div>
+
+      <div class="status-panel logs-panel">
+        <div class="panel-title">Logs</div>
+        <div id="logs" class="logs"></div>
+      </div>
+    </aside>
+
+    <!-- Área principal: ações do operador para conexão e envio de eventos. -->
+    <main class="content">
+      <header class="hero">
+        <div>
+          <span class="eyebrow">CLIENTE DE TESTE / HOMOLOGAÇÃO</span>
+          <h2>Conecte ao Bridge e publique eventos customizados</h2>
+          <p>INTERFACE WEB SIMPLES. NÃO SALVA AMBIENTE OU INFOS CASO O SERVIDOR SEJA REINICIADO</p>
+        </div>
+      </header>
+
+      <section class="tabs">
+        <button class="tab-button active" data-tab="connection">Conexão</button>
+        <button class="tab-button" data-tab="event">Enviar evento</button>
+      </section>
+
+      <section id="toast" class="toast hidden"></section>
+
+      <!-- Aba de conexão: inicia a sessão e permite consultar a configuração do bridge. -->
+      <section id="connection" class="tab-content active">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h3>Parâmetros de Conexão</h3>
+              <p>Informe a URL do Defense IA, credenciais AK/SK e dados opcionais do Bridge.</p>
+            </div>
+          </div>
+
+          <form id="connectForm" class="form-grid">
+            <label><span>Defense IA URL</span><input name="baseUrl" placeholder="https://defense.exemplo.com" required></label>
+            <label><span>Bridge ID</span><input name="bridgeId" placeholder="Opcional, usado para GET config"></label>
+            <label><span>Access Key</span><input name="accessKey" required></label>
+            <label><span>Secret Key</span><input name="secretKey" type="password" required></label>
+            <label><span>Source Code padrão</span><input name="eventSourceCode" placeholder="1000005$1$0$2"></label>
+            <label><span>Source Name padrão</span><input name="eventSourceName" placeholder="Entrance Door"></label>
+
+            <details class="advanced full-width">
+              <summary>Configurações avançadas</summary>
+              <div class="form-grid inner-grid">
+                <label><span>Auth Path</span><input name="authPath" value="/ecos/api/v1.1/account/authorize"></label>
+                <label><span>Heartbeat Path</span><input name="heartbeatPath" value="/ecos/api/v1.1/account/heartbeat"></label>
+                <label><span>Token Update Path</span><input name="tokenUpdatePath" value="/ecos/api/v1.1/account/token/update"></label>
+                <label><span>Event Push Path</span><input name="eventPushPath" value="/ecos/api/v1.1/bridge/event/push"></label>
+                <label><span>Bridge Config Path</span><input name="bridgeConfigPath" value="/ecos/api/v1.1/bridge/{id}/config"></label>
+                <label><span>Heartbeat (segundos)</span><input name="heartbeatIntervalSec" type="number" value="30" min="5"></label>
+                <label><span>Refresh token (minutos)</span><input name="tokenRefreshMinutes" type="number" value="25" min="1"></label>
+                <label class="checkbox-row">
+                  <input name="insecureTls" type="checkbox">
+                  <span>Aceitar TLS inseguro / certificado self-signed</span>
+                </label>
+              </div>
+            </details>
+
+            <div class="actions full-width">
+              <button type="submit" class="primary">Conectar</button>
+              <button type="button" id="disconnectBtn" class="secondary">Desconectar</button>
+              <button type="button" id="bridgeConfigBtn" class="secondary">Consultar config do Bridge</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h3>Resposta da configuração do Bridge</h3>
+              <p>Consulta opcional do endpoint de configuração documentado.</p>
+            </div>
+          </div>
+          <pre id="bridgeConfigResult" class="json-box">Nenhuma consulta executada.</pre>
+        </div>
+      </section>
+
+      <!-- Aba de evento: coleta o payload antes de o servidor aplicar os defaults canônicos. -->
+      <section id="event" class="tab-content">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h3>Push de evento</h3>
+              <p>Preencha o tipo e o conteúdo do evento. O sistema gera automaticamente um UUID e usa o horário atual, salvo se você sobrescrever.</p>
+            </div>
+          </div>
+
+          <form id="eventForm" class="form-grid">
+            <label><span>Event Type Code</span><input name="eventTypeCode" placeholder="51" required></label>
+            <label><span>Event Type Name</span><input name="eventTypeName" placeholder="Valid Swipe"></label>
+            <label><span>Source Code override</span><input name="eventSourceCode" placeholder="Opcional"></label>
+            <label><span>Source Name override</span><input name="eventSourceName" placeholder="Opcional"></label>
+            <label class="full-width"><span>Mensagem / remark</span><textarea name="message" rows="5" placeholder="Conteúdo do evento" required></textarea></label>
+            <label><span>Event Time (Unix, opcional)</span><input name="eventTimeUnix" type="number" placeholder="Se vazio, usa agora()"></label>
+            <label class="full-width"><span>Extra JSON (opcional)</span><textarea name="extraJson" rows="6" placeholder='{"customField":"valor","severity":"high"}'></textarea></label>
+            <div class="actions full-width"><button type="submit" class="primary">Enviar evento</button></div>
+          </form>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h3>Resposta do envio</h3>
+              <p>Payload retornado pelo Defense IA após o push.</p>
+            </div>
+          </div>
+          <pre id="eventResponse" class="json-box">Nenhum evento enviado ainda.</pre>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
